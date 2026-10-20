@@ -100,9 +100,15 @@ public sealed class QueryPlan
                 || node.Operation.StartsWith("SCAN ", StringComparison.OrdinalIgnoreCase)
                 || node.Operation.Equals("ALL", StringComparison.OrdinalIgnoreCase)
                 || node.Operation.Equals("TABLE ACCESS FULL", StringComparison.OrdinalIgnoreCase);
-            if (scan && rows * (node.Loops ?? 1) >= 1000)
+            // A scan that reads many rows and keeps few is the usual missing index, so count what it read:
+            // the rows it returned plus those its filter threw away (PostgreSQL's actual plans report them).
+            var loops = node.Loops ?? 1;
+            var removed = RowsRemovedByFilter(node);
+            if (scan && (rows + removed) * loops >= 1000)
             {
-                node.Warnings.Add($"Full scan of {rows * (node.Loops ?? 1):N0} rows — an index on the filtered columns may help.");
+                node.Warnings.Add(removed > 0
+                    ? $"Full scan of {(rows + removed) * loops:N0} rows that keeps {rows * loops:N0} — an index on the filtered columns may help."
+                    : $"Full scan of {rows * loops:N0} rows — an index on the filtered columns may help.");
             }
 
             if (node is { ActualRows: { } actual, EstimatedRows: { } estimate } && (actual > 0 || estimate > 0))
@@ -115,4 +121,11 @@ public sealed class QueryPlan
             }
         }
     }
+
+    /// <summary>Gets the rows a node's filter discarded per loop, or 0 when the plan does not say.</summary>
+    private static double RowsRemovedByFilter(PlanNode node) =>
+        node.Details.FirstOrDefault(d => d.Key == "Rows Removed by Filter").Value is { } text
+            && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var removed)
+            ? removed
+            : 0;
 }

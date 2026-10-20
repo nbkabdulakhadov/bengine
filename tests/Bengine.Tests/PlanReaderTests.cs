@@ -52,6 +52,24 @@ public sealed class PlanReaderTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Flags_scans_that_read_many_rows_and_keep_few()
+    {
+        // A parallel scan in three loops that returns 123 rows and discards a million: the classic missing index.
+        const string json = """
+            [{"Plan": {"Node Type": "Gather Merge", "Total Cost": 20014.21, "Plan Rows": 314, "Actual Rows": 50, "Actual Total Time": 18.2, "Actual Loops": 1,
+              "Plans": [{"Node Type": "Seq Scan", "Relation Name": "transactions", "Alias": "transactions", "Total Cost": 18972.33, "Plan Rows": 157,
+                         "Actual Rows": 41, "Actual Total Time": 14.4, "Actual Loops": 3, "Filter": "(wallet_id = 7)", "Rows Removed by Filter": 333210}]},
+              "Planning Time": 0.3, "Execution Time": 18.3}]
+            """;
+
+        var plan = PlanReader.ParsePostgres(json, analyzed: true);
+        plan.Annotate();
+
+        var scan = Assert.Single(Assert.Single(plan.Roots).Children);
+        Assert.Contains(scan.Warnings, w => w.StartsWith("Full scan of 999,753 rows that keeps 123", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Parses_mysql_tree_text()
     {
         const string text = """
