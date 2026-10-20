@@ -141,11 +141,17 @@ public sealed class DatabaseSession : IAsyncDisposable
             return Open(await MongoConnection.OpenAsync(connectionString, cancellationToken: cancellationToken).ConfigureAwait(false), options);
         }
 
+        var readOnlyStatement = options.ReadOnly ? ReadOnlyStatement(provider) : null;
+        if (readOnlyStatement is not null)
+        {
+            connectionString = WithoutPooling(provider, connectionString);
+        }
+
         var connection = await DatabaseConnectionFactory
             .OpenAsync(provider, connectionString, cancellationToken)
             .ConfigureAwait(false);
 
-        if (options.ReadOnly && ReadOnlyStatement(provider) is { } sql)
+        if (readOnlyStatement is { } sql)
         {
             try
             {
@@ -325,6 +331,33 @@ public sealed class DatabaseSession : IAsyncDisposable
         DatabaseProvider.Sqlite => "PRAGMA query_only = ON",
         _ => null,
     };
+
+    /// <summary>
+    /// Takes the connection of a read-only session out of the driver's pool. The read-only switch is session
+    /// state, and a pooled connection keeps it after the session closes: SQLite always does, Npgsql and
+    /// MySqlConnector when their reset on close is turned off. A later writable session handed that connection
+    /// would be read-only too.
+    /// </summary>
+    /// <param name="provider">The target provider.</param>
+    /// <param name="connectionString">The connection string.</param>
+    /// <returns>The connection string with pooling off, or unchanged when it cannot be parsed (opening reports why).</returns>
+    private static string WithoutPooling(DatabaseProvider provider, string connectionString)
+    {
+        try
+        {
+            return provider switch
+            {
+                DatabaseProvider.PostgreSql => new Npgsql.NpgsqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString,
+                DatabaseProvider.MySql => new MySqlConnector.MySqlConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString,
+                DatabaseProvider.Sqlite => new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString) { Pooling = false }.ConnectionString,
+                _ => connectionString,
+            };
+        }
+        catch (ArgumentException)
+        {
+            return connectionString;
+        }
+    }
 
     private static SchemaProviderBase CreateProvider(DatabaseProvider provider, DbConnection connection, Func<DbTransaction?> transaction) => provider switch
     {

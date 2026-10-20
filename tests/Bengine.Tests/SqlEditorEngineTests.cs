@@ -290,6 +290,35 @@ public sealed class SqlEditorEngineTests
     }
 
     [Fact]
+    public async Task A_read_only_session_leaves_later_sessions_on_the_same_database_writable()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"bengine_ro_{Guid.NewGuid():N}.db");
+        var connectionString = $"Data Source={path}";
+        try
+        {
+            await using (var setup = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, connectionString))
+            {
+                await setup.Query.ExecuteAsync("CREATE TABLE notes (id INTEGER PRIMARY KEY, text TEXT)");
+            }
+
+            await using (var readOnly = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, connectionString, new SessionOptions { ReadOnly = true }))
+            {
+                await readOnly.Query.ExecuteAsync("SELECT count(*) FROM notes");
+            }
+
+            // The read-only switch must not stay on a pooled connection that the next session gets.
+            await using var writable = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, connectionString);
+            var result = await writable.Query.ExecuteAsync("INSERT INTO notes (text) VALUES ('still writable')");
+            Assert.Equal(1, result.RowsAffected);
+        }
+        finally
+        {
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task Returns_every_result_set_of_a_batch()
     {
         await using var session = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, "Data Source=:memory:");
