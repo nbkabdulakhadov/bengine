@@ -289,3 +289,9 @@ requirements. In short: strict typing (enums over strings, no `dynamic`),
 immutability (`record` value objects, `FrozenDictionary` maps), metadata as the
 single source of truth, and a clean ownership model — a column knows nothing of
 indexes or keys; the table owns its constraints; the database owns its objects.
+
+## License
+
+Bengine is released under the [MIT License](LICENSE). The Studio's file and
+folder icons come from the Material Icon Theme, also MIT
+(`src/Bengine.Studio/Assets/Icons/LICENSE.txt`).
