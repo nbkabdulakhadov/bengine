@@ -157,6 +157,15 @@ public sealed class MongoShellTests
     }
 
     [Fact]
+    public async Task A_user_without_a_password_is_refused_with_a_reason()
+    {
+        // The driver refuses such a credential before it connects (ArgumentException); it is the documented IntrospectionException.
+        var server = new ServerProfile { Name = "m", Provider = DatabaseProvider.MongoDb, Host = "127.0.0.1", Port = 1, Username = "app" };
+        var failure = await Assert.ThrowsAsync<Bengine.Introspection.IntrospectionException>(() => ObjectExplorer.TestAsync(server, null));
+        Assert.Equal("The MongoDB user app needs a password: enter it, or clear the user name to connect without signing in.", failure.Message);
+    }
+
+    [Fact]
     public void Completes_collections_methods_fields_and_operators()
     {
         var catalog = new DatabaseCatalog(DatabaseProvider.MongoDb, "shop", null, [],

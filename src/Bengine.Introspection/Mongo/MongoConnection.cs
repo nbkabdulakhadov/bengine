@@ -42,19 +42,27 @@ public sealed partial class MongoConnection
     /// <exception cref="IntrospectionException">The URL is invalid, or the server cannot be reached or refused the login.</exception>
     public static async Task<MongoConnection> OpenAsync(string connectionString, string owner = "", CancellationToken cancellationToken = default)
     {
-        MongoUrl url;
+        MongoUrl? url = null;
+        MongoClientSettings settings;
         try
         {
             url = MongoUrl.Create(connectionString);
+
+            // The driver reads the credential here: a user name without a password is refused, not sent.
+            settings = Settings(url);
         }
         catch (Exception ex) when (ex is MongoConfigurationException or ArgumentException or FormatException)
         {
-            throw new IntrospectionException($"The MongoDB connection URL is invalid. {ex.Message}", ex);
+            throw new IntrospectionException(
+                url is { Username.Length: > 0, Password: null or "" }
+                    ? $"The MongoDB user {url.Username} needs a password: enter it, or clear the user name to connect without signing in."
+                    : $"The MongoDB connection URL is invalid. {ex.Message}",
+                ex);
         }
 
         var database = string.IsNullOrEmpty(url.DatabaseName) ? "test" : url.DatabaseName;
         var key = owner + "|" + new MongoUrlBuilder(url.ToString()) { DatabaseName = null }.ToMongoUrl();
-        var client = Clients.GetOrAdd(key, _ => new MongoClient(Settings(url)));
+        var client = Clients.GetOrAdd(key, _ => new MongoClient(settings));
         try
         {
             await client.GetDatabase(database)
