@@ -26,10 +26,24 @@ public sealed class RelationalDataReader : RelationalComponentBase, ITableDataRe
     }
 
     /// <inheritdoc />
+    /// <exception cref="IntrospectionException">The server rejected the query: a filter or sort the user typed, a relation
+    /// gone, a connection lost.</exception>
     public async Task<DataPage> QueryAsync(
         TableRef table,
         DataQuery query,
         CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await ReadPageAsync(table, query, cancellationToken).ConfigureAwait(false);
+        }
+        catch (DbException ex)
+        {
+            throw new IntrospectionException(ex.Message, ex);
+        }
+    }
+
+    private async Task<DataPage> ReadPageAsync(TableRef table, DataQuery query, CancellationToken cancellationToken)
     {
         var columns = await ReadColumnNamesAsync(table, cancellationToken).ConfigureAwait(false);
         var lookup = new HashSet<string>(columns, StringComparer.OrdinalIgnoreCase);

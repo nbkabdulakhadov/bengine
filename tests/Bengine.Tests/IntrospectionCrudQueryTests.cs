@@ -115,6 +115,22 @@ public sealed class IntrospectionCrudQueryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Surfaces_a_table_filter_or_sort_the_server_rejects_as_an_introspection_exception()
+    {
+        await using var session = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, ConnectionString);
+        var products = new TableRef("products");
+
+        // The total count's query fails first, then the page's (without the count).
+        var counted = await Assert.ThrowsAsync<IntrospectionException>(() =>
+            session.Data.QueryAsync(products, new DataQuery { WhereSql = "name = 'Widget' 'Gadget'", IncludeTotalCount = true }));
+        Assert.Contains("syntax error", counted.Message, StringComparison.OrdinalIgnoreCase);
+        await Assert.ThrowsAsync<IntrospectionException>(() =>
+            session.Data.QueryAsync(products, new DataQuery { WhereSql = "name = 'Widget' 'Gadget'" }));
+        await Assert.ThrowsAsync<IntrospectionException>(() =>
+            session.Data.QueryAsync(products, new DataQuery { OrderBySql = "no_such_column" }));
+    }
+
+    [Fact]
     public async Task Renders_table_ddl_from_the_live_catalog()
     {
         await using var session = await DatabaseSession.OpenAsync(DatabaseProvider.Sqlite, ConnectionString);
